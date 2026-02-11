@@ -1,6 +1,11 @@
 package main
 
-import "time"
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"time"
+)
 
 // 历史记录项
 type HistoryItem struct {
@@ -89,4 +94,66 @@ func (h *History) Len() int {
 // GetAll 获取所有历史记录
 func (h *History) GetAll() []HistoryItem {
 	return h.items
+}
+
+// Save 保存历史记录到文件
+func (h *History) Save(filepath string) error {
+	// 确保目录存在
+	dir := filepath[:len(filepath)-len(filepath[len(filepath)-1:])-1]
+	for i := len(filepath) - 1; i >= 0; i-- {
+		if filepath[i] == '/' || filepath[i] == '\\' {
+			dir = filepath[:i]
+			break
+		}
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	// 序列化为 JSON
+	data, err := json.MarshalIndent(h.items, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	// 写入文件
+	return os.WriteFile(filepath, data, 0644)
+}
+
+// Load 从文件加载历史记录
+func (h *History) Load(filepath string) error {
+	// 读取文件
+	data, err := os.ReadFile(filepath)
+	if err != nil {
+		return err
+	}
+
+	// 反序列化
+	var items []HistoryItem
+	if err := json.Unmarshal(data, &items); err != nil {
+		return err
+	}
+
+	// 重建 items 和 seen map
+	h.items = make([]HistoryItem, 0, maxHistoryItems)
+	h.seen = make(map[string]struct{})
+
+	for _, item := range items {
+		if _, exists := h.seen[item.Content]; !exists {
+			h.items = append(h.items, item)
+			h.seen[item.Content] = struct{}{}
+		}
+	}
+
+	return nil
+}
+
+// GetHistoryFilePath 获取默认历史文件路径
+func GetHistoryFilePath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// 如果无法获取用户目录，使用当前目录
+		return "clippy_history.json"
+	}
+	return filepath.Join(homeDir, ".config", "clippy", "history.json")
 }
