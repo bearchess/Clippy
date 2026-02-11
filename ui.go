@@ -11,14 +11,15 @@ import (
 
 // Model Bubble Tea 模型
 type Model struct {
-	history      *History
-	clipboard    Clipboard
-	cursor       int
-	page         int
-	expandedItem int // -1 表示没有展开的项目
-	err          error
-	last         string
-	styles       *Styles
+	history         *History
+	clipboard       Clipboard
+	cursor          int
+	page            int
+	expandedItem    int    // -1 表示没有展开的项目
+	err             error
+	last            string
+	styles          *Styles
+	historyFilePath string // 历史记录文件路径
 }
 
 // Styles 样式定义
@@ -48,13 +49,21 @@ func NewModel() Model {
 		// 如果无法创建剪贴板，使用 nil，但会在运行时报错
 		panic(fmt.Sprintf("无法初始化剪贴板: %v", err))
 	}
+	
+	history := NewHistory()
+	historyFilePath := GetHistoryFilePath()
+	
+	// 尝试加载历史记录，失败时静默处理
+	_ = history.Load(historyFilePath)
+	
 	return Model{
-		history:      NewHistory(),
-		clipboard:    clipboard,
-		cursor:       0,
-		page:         0,
-		expandedItem: -1,
-		styles:       NewStyles(),
+		history:         history,
+		clipboard:       clipboard,
+		cursor:          0,
+		page:            0,
+		expandedItem:    -1,
+		styles:          NewStyles(),
+		historyFilePath: historyFilePath,
 	}
 }
 
@@ -87,6 +96,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.history.Add(v) {
 				m.cursor = 0
 				m.page = 0
+				// 自动保存历史记录
+				_ = m.history.Save(m.historyFilePath)
 			}
 		}
 		return m, m.pollClipboard()
@@ -207,6 +218,8 @@ func (m Model) deleteSelected() Model {
 			m.page = totalPages - 1
 		}
 		m.err = nil
+		// 保存历史记录
+		_ = m.history.Save(m.historyFilePath)
 	}
 	return m
 }
@@ -217,6 +230,8 @@ func (m Model) clearAll() Model {
 	m.page = 0
 	m.expandedItem = -1
 	m.err = nil
+	// 保存历史记录
+	_ = m.history.Save(m.historyFilePath)
 	return m
 }
 
