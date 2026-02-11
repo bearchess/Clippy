@@ -1,4 +1,4 @@
-module my-tui-demo
+module github.com/bearchess/Clippy
 
 go 1.24.2
 
