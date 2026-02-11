@@ -43,9 +43,14 @@ func NewStyles() *Styles {
 
 // NewModel 创建新的模型
 func NewModel() Model {
+	clipboard, err := NewClipboard()
+	if err != nil {
+		// 如果无法创建剪贴板，使用 nil，但会在运行时报错
+		panic(fmt.Sprintf("无法初始化剪贴板: %v", err))
+	}
 	return Model{
 		history:      NewHistory(),
-		clipboard:    NewMacClipboard(),
+		clipboard:    clipboard,
 		cursor:       0,
 		page:         0,
 		expandedItem: -1,
@@ -251,7 +256,7 @@ func (m Model) selectAndCopy(keyStr string) Model {
 func (m Model) View() string {
 	var b strings.Builder
 
-	b.WriteString(m.styles.Title.Render("剪贴板历史管理器 (macOS)") + "\n\n")
+	b.WriteString(m.styles.Title.Render("剪贴板历史管理器") + "\n\n")
 
 	if m.history.Len() == 0 {
 		b.WriteString(m.styles.Normal.Render("剪贴板历史为空，请复制一些内容...\n"))
