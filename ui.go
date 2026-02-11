@@ -118,11 +118,10 @@ func (m Model) handleKeyPress(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch key.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "q", "esc":
+	case "ctrl+c", "q", "esc":
 		return m, tea.Quit
 	case "/":
+		return m.enterSearchMode(), nil
 		return m.enterSearchMode(), nil
 	case "up", "k":
 		return m.moveUp(), nil
@@ -177,15 +176,15 @@ func (m Model) handleSearchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.updateSearchResults()
 		}
 		return m, nil
-	case "enter", " ":
-		// 在搜索模式下也可以复制选中项
+	case "enter":
+		// 在搜索模式下可以复制选中项
 		return m.copySelected(), nil
 	case "up", "k":
 		return m.moveUp(), nil
 	case "down", "j":
 		return m.moveDown(), nil
 	default:
-		// 添加可打印字符到搜索查询
+		// 添加可打印字符到搜索查询（包括空格）
 		if len(key.String()) == 1 {
 			m.searchQuery += key.String()
 			m.updateSearchResults()

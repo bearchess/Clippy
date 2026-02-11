@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -106,6 +105,6 @@ func NewClipboard() (Clipboard, error) {
 	case "windows":
 		return NewWindowsClipboard(), nil
 	default:
-		return nil, errors.New(fmt.Sprintf("不支持的操作系统: %s", runtime.GOOS))
+		return nil, fmt.Errorf("不支持的操作系统: %s", runtime.GOOS)
 	}
 }

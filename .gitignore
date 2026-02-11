@@ -1,5 +1,7 @@
 # 编译后的二进制文件
 clipboard-manager
+Clippy
+my-tui-demo
 *.exe
 *.exe~
 *.dll
