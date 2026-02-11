@@ -97,15 +97,9 @@ func (h *History) GetAll() []HistoryItem {
 }
 
 // Save 保存历史记录到文件
-func (h *History) Save(filepath string) error {
+func (h *History) Save(filePath string) error {
 	// 确保目录存在
-	dir := filepath[:len(filepath)-len(filepath[len(filepath)-1:])-1]
-	for i := len(filepath) - 1; i >= 0; i-- {
-		if filepath[i] == '/' || filepath[i] == '\\' {
-			dir = filepath[:i]
-			break
-		}
-	}
+	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -117,7 +111,7 @@ func (h *History) Save(filepath string) error {
 	}
 
 	// 写入文件
-	return os.WriteFile(filepath, data, 0644)
+	return os.WriteFile(filePath, data, 0644)
 }
 
 // Load 从文件加载历史记录
