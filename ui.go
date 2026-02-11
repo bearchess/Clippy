@@ -20,6 +20,9 @@ type Model struct {
 	last            string
 	styles          *Styles
 	historyFilePath string // 历史记录文件路径
+	searching       bool   // 是否处于搜索模式
+	searchQuery     string // 搜索查询字符串
+	filteredIndices []int  // 过滤后的索引列表
 }
 
 // Styles 样式定义
@@ -109,9 +112,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyPress 处理按键事件
 func (m Model) handleKeyPress(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// 搜索模式下的特殊处理
+	if m.searching {
+		return m.handleSearchKey(key)
+	}
+
 	switch key.String() {
-	case "ctrl+c", "q", "esc":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "q", "esc":
+		return m, tea.Quit
+	case "/":
+		return m.enterSearchMode(), nil
 	case "up", "k":
 		return m.moveUp(), nil
 	case "down", "j":
@@ -138,6 +150,72 @@ func (m Model) handleKeyPress(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// enterSearchMode 进入搜索模式
+func (m Model) enterSearchMode() Model {
+	m.searching = true
+	m.searchQuery = ""
+	m.filteredIndices = []int{}
+	return m
+}
+
+// exitSearchMode 退出搜索模式
+func (m Model) exitSearchMode() Model {
+	m.searching = false
+	m.searchQuery = ""
+	m.filteredIndices = []int{}
+	return m
+}
+
+// handleSearchKey 处理搜索模式下的按键
+func (m Model) handleSearchKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "esc", "ctrl+c":
+		return m.exitSearchMode(), nil
+	case "backspace":
+		if len(m.searchQuery) > 0 {
+			m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+			m.updateSearchResults()
+		}
+		return m, nil
+	case "enter", " ":
+		// 在搜索模式下也可以复制选中项
+		return m.copySelected(), nil
+	case "up", "k":
+		return m.moveUp(), nil
+	case "down", "j":
+		return m.moveDown(), nil
+	default:
+		// 添加可打印字符到搜索查询
+		if len(key.String()) == 1 {
+			m.searchQuery += key.String()
+			m.updateSearchResults()
+		}
+		return m, nil
+	}
+}
+
+// updateSearchResults 更新搜索结果
+func (m *Model) updateSearchResults() {
+	m.filteredIndices = []int{}
+	if m.searchQuery == "" {
+		return
+	}
+
+	// 大小写不敏感的搜索
+	query := strings.ToLower(m.searchQuery)
+	for i := 0; i < m.history.Len(); i++ {
+		if item, ok := m.history.Get(i); ok {
+			if strings.Contains(strings.ToLower(item.Content), query) {
+				m.filteredIndices = append(m.filteredIndices, i)
+			}
+		}
+	}
+
+	// 重置光标和页码
+	m.cursor = 0
+	m.page = 0
+}
+
 // 导航方法
 func (m Model) moveUp() Model {
 	if m.cursor > 0 {
@@ -150,7 +228,12 @@ func (m Model) moveUp() Model {
 }
 
 func (m Model) moveDown() Model {
-	if m.history.Len() > 0 && m.cursor < m.history.Len()-1 {
+	maxIndex := m.history.Len() - 1
+	if m.searching && len(m.filteredIndices) > 0 {
+		maxIndex = len(m.filteredIndices) - 1
+	}
+	
+	if maxIndex >= 0 && m.cursor < maxIndex {
 		m.cursor++
 		if m.cursor >= (m.page+1)*itemsPerPage {
 			m.page++
@@ -195,7 +278,15 @@ func (m Model) goEnd() Model {
 
 // 操作方法
 func (m Model) copySelected() Model {
-	if item, ok := m.history.Get(m.cursor); ok {
+	// 在搜索模式下，使用过滤后的索引
+	var realIndex int
+	if m.searching && len(m.filteredIndices) > 0 && m.cursor < len(m.filteredIndices) {
+		realIndex = m.filteredIndices[m.cursor]
+	} else {
+		realIndex = m.cursor
+	}
+
+	if item, ok := m.history.Get(realIndex); ok {
 		if err := m.clipboard.Set(item.Content); err != nil {
 			m.err = err
 		} else {
@@ -273,11 +364,30 @@ func (m Model) View() string {
 
 	b.WriteString(m.styles.Title.Render("剪贴板历史管理器") + "\n\n")
 
+	// 搜索模式提示
+	if m.searching {
+		searchPrompt := fmt.Sprintf("搜索: %s█", m.searchQuery)
+		b.WriteString(m.styles.Cursor.Render(searchPrompt) + "\n")
+		if len(m.filteredIndices) > 0 {
+			b.WriteString(m.styles.Help.Render(fmt.Sprintf("找到 %d 条匹配结果", len(m.filteredIndices))) + "\n\n")
+		} else if m.searchQuery != "" {
+			b.WriteString(m.styles.Help.Render("无匹配结果") + "\n\n")
+		} else {
+			b.WriteString(m.styles.Help.Render("输入搜索内容，按 Esc 退出搜索") + "\n\n")
+		}
+	}
+
 	if m.history.Len() == 0 {
 		b.WriteString(m.styles.Normal.Render("剪贴板历史为空，请复制一些内容...\n"))
 	} else {
-		m.renderHistoryItems(&b)
-		m.renderPageInfo(&b)
+		if m.searching && len(m.filteredIndices) > 0 {
+			m.renderFilteredItems(&b)
+		} else if m.searching {
+			// 搜索模式下无结果时不显示历史记录
+		} else {
+			m.renderHistoryItems(&b)
+			m.renderPageInfo(&b)
+		}
 	}
 
 	m.renderHelp(&b)
@@ -319,6 +429,34 @@ func (m Model) renderHistoryItems(b *strings.Builder) {
 		}
 
 		if m.expandedItem == i {
+			m.renderExpandedItem(b, item, prefix, displayIndex, style)
+		} else {
+			m.renderCompactItem(b, item, prefix, displayIndex, style)
+		}
+	}
+}
+
+func (m Model) renderFilteredItems(b *strings.Builder) {
+	// 在搜索模式下显示过滤后的结果
+	for displayIdx, realIdx := range m.filteredIndices {
+		if displayIdx >= itemsPerPage {
+			break // 只显示前 10 条
+		}
+
+		item, _ := m.history.Get(realIdx)
+		displayIndex := displayIdx + 1
+		if displayIndex == 10 {
+			displayIndex = 0
+		}
+
+		prefix := "  "
+		style := m.styles.Normal
+		if displayIdx == m.cursor {
+			prefix = "▶ "
+			style = m.styles.Cursor
+		}
+
+		if m.expandedItem == realIdx {
 			m.renderExpandedItem(b, item, prefix, displayIndex, style)
 		} else {
 			m.renderCompactItem(b, item, prefix, displayIndex, style)
@@ -378,22 +516,32 @@ func (m Model) renderPageInfo(b *strings.Builder) {
 
 func (m Model) renderHelp(b *strings.Builder) {
 	b.WriteString("\n")
-	helpLines := []string{
-		"导航: ↑↓/kj移动   ←→/hl翻页   Home/End首末项",
-		"操作: 1-0快选复制   Enter/Space复制   v展开/收起",
-		"管理: d删除   c清空   q/Esc退出",
-	}
+	if m.searching {
+		helpLines := []string{
+			"搜索模式: 输入内容搜索   Backspace删除   Enter复制",
+			"导航: ↑↓/kj移动   Esc退出搜索   Ctrl+C退出程序",
+		}
+		for _, line := range helpLines {
+			b.WriteString(m.styles.Help.Render(line) + "\n")
+		}
+	} else {
+		helpLines := []string{
+			"导航: ↑↓/kj移动   ←→/hl翻页   Home/End首末项",
+			"操作: 1-0快选复制   Enter/Space复制   v展开/收起",
+			"管理: d删除   c清空   /搜索   q/Esc退出",
+		}
 
-	for _, line := range helpLines {
-		b.WriteString(m.styles.Help.Render(line) + "\n")
-	}
+		for _, line := range helpLines {
+			b.WriteString(m.styles.Help.Render(line) + "\n")
+		}
 
-	// 显示展开提示
-	if m.history.Len() > 0 {
-		if m.expandedItem == m.cursor {
-			b.WriteString(m.styles.Help.Render("💡 当前项已展开，按 v 收起") + "\n")
-		} else {
-			b.WriteString(m.styles.Help.Render("💡 按 v 展开当前项查看完整内容") + "\n")
+		// 显示展开提示
+		if m.history.Len() > 0 {
+			if m.expandedItem == m.cursor {
+				b.WriteString(m.styles.Help.Render("💡 当前项已展开，按 v 收起") + "\n")
+			} else {
+				b.WriteString(m.styles.Help.Render("💡 按 v 展开当前项查看完整内容") + "\n")
+			}
 		}
 	}
 }
