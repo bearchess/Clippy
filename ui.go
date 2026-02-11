@@ -134,7 +134,7 @@ func (m Model) moveUp() Model {
 }
 
 func (m Model) moveDown() Model {
-	if m.cursor < m.history.Len()-1 {
+	if m.history.Len() > 0 && m.cursor < m.history.Len()-1 {
 		m.cursor++
 		if m.cursor >= (m.page+1)*itemsPerPage {
 			m.page++
@@ -269,14 +269,15 @@ func (m Model) View() string {
 func (m Model) renderHistoryItems(b *strings.Builder) {
 	totalPages := (m.history.Len() + itemsPerPage - 1) / itemsPerPage
 
-	// 限制当前页码在有效范围内
-	if m.page < 0 {
-		m.page = 0
-	} else if m.page >= totalPages {
-		m.page = totalPages - 1
+	// 使用局部变量而不是直接修改 m.page（值接收者）
+	page := m.page
+	if page < 0 {
+		page = 0
+	} else if page >= totalPages {
+		page = totalPages - 1
 	}
 
-	start := m.page * itemsPerPage
+	start := page * itemsPerPage
 	end := start + itemsPerPage
 	if end > m.history.Len() {
 		end = m.history.Len()
@@ -334,8 +335,10 @@ func (m Model) renderCompactItem(b *strings.Builder, item HistoryItem, prefix st
 	timeLen := len(" | " + timeStr)
 	availableLen := maxDisplayLength - prefixLen - timeLen
 
-	if len(display) > availableLen {
+	if availableLen > 3 && len(display) > availableLen {
 		display = display[:availableLen-3] + truncateSuffix
+	} else if availableLen > 0 && len(display) > availableLen {
+		display = display[:availableLen]
 	}
 
 	line := fmt.Sprintf("%s[%d] %s | %s",
